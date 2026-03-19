@@ -3,26 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Seal Game - New Joystick</title>
+    <title>Seal Game - Classic</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #1cb5e0; font-family: 'Arial', sans-serif; }
-        canvas { display: block; touch-action: none; }
-        #controls {
-            position: absolute; top: 10px; right: 10px;
-            display: flex; gap: 10px; z-index: 10;
+        body { margin: 0; overflow: hidden; background: #1cb5e0; font-family: Arial, sans-serif; }
+        canvas { display: block; touch-action: none; background: #1cb5e0; }
+        #top-ui {
+            position: absolute; top: 10px; left: 10px; right: 10px;
+            display: flex; justify-content: space-between; align-items: center;
+            pointer-events: none; z-index: 10;
         }
-        button {
-            padding: 10px; font-size: 16px; border-radius: 8px;
-            border: none; background: white; cursor: pointer;
-            box-shadow: 0 4px 0 #ccc;
+        .score-box { color: white; font-size: 24px; font-weight: bold; text-shadow: 2px 2px 4px #000; }
+        .btn-mode {
+            padding: 10px 15px; background: white; border: none; border-radius: 10px;
+            font-weight: bold; cursor: pointer; pointer-events: auto;
+            box-shadow: 0 4px 0 #999;
         }
-        button:active { transform: translateY(2px); box-shadow: none; }
+        .btn-mode:active { transform: translateY(2px); box-shadow: none; }
     </style>
 </head>
 <body>
 
-    <div id="controls">
-        <button onclick="toggleMode()">🕹️ Режим: <span id="modeText">Кнопки</span></button>
+    <div id="top-ui">
+        <div class="score-box">Рыбки: <span id="scoreVal">0</span></div>
+        <button class="btn-mode" onclick="toggleMode()">Режим: <span id="modeName">Кнопки</span></button>
     </div>
 
     <canvas id="gameCanvas"></canvas>
@@ -30,6 +33,7 @@
 <script>
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
+    const scoreVal = document.getElementById('scoreVal');
 
     function resize() {
         canvas.width = window.innerWidth;
@@ -38,57 +42,45 @@
     window.addEventListener('resize', resize);
     resize();
 
-    // Ресурсы
+    // Картинки (убедись, что файлы на гитхабе называются именно так!)
     const sealImg = new Image(); sealImg.src = 'seal.jfif';
     const fishImg = new Image(); fishImg.src = 'fish.jpg';
 
-    let isJoystickMode = false;
     let score = 0;
+    let isJoystickMode = false;
 
     const seal = {
-        x: 50, y: 100, w: 70, h: 70,
+        x: 50, y: 50, w: 70, h: 70,
         vx: 0, vy: 0, speed: 5,
         gravity: 0.4, isJumping: false, facingLeft: false
     };
 
-    const fish = { x: 200, y: 150, w: 40, h: 30 };
+    const fish = { x: 250, y: 150, w: 40, h: 30 };
     const rock = { x: 100, y: canvas.height - 150, w: 180, h: 40 };
 
-    // Состояние джойстика
-    const joy = { active: false, x: 0, y: 0, currX: 0, currY: 0, radius: 50 };
+    // Джойстик
+    const joy = { active: false, startX: 0, startY: 0, currX: 0, currY: 0, radius: 50 };
 
     function toggleMode() {
         isJoystickMode = !isJoystickMode;
-        document.getElementById('modeText').innerText = isJoystickMode ? "Джойстик" : "Кнопки";
+        document.getElementById('modeName').innerText = isJoystickMode ? "Джойстик" : "Кнопки";
     }
 
-    // УПРАВЛЕНИЕ
-    window.addEventListener('keydown', (e) => {
-        if (e.key === "ArrowLeft") { seal.vx = -seal.speed; seal.facingLeft = true; }
-        if (e.key === "ArrowRight") { seal.vx = seal.speed; seal.facingLeft = false; }
-        if (e.key === "ArrowUp" && !seal.isJumping) { seal.vy = -10; seal.isJumping = true; }
-    });
-
-    window.addEventListener('keyup', (e) => {
-        if (e.key === "ArrowLeft" || e.key === "ArrowRight") seal.vx = 0;
-    });
-
-    // TOUCH EVENTS
+    // ТАЧ-УПРАВЛЕНИЕ
     canvas.addEventListener('touchstart', (e) => {
         const touch = e.touches[0];
         const tx = touch.clientX;
-        
+
         if (isJoystickMode) {
             if (tx < canvas.width / 2) {
                 joy.active = true;
-                joy.x = tx; joy.y = touch.clientY;
+                joy.startX = tx; joy.startY = touch.clientY;
                 joy.currX = tx; joy.currY = touch.clientY;
             } else if (!seal.isJumping) {
-                // Прыжок при тапе справа
-                seal.vy = -10; seal.isJumping = true;
+                seal.vy = -10; seal.isJumping = true; // Прыжок справа
             }
         } else {
-            // Обычный режим (лево/право/прыжок)
+            // Режим КНОПОК (как был раньше)
             if (tx < canvas.width / 3) { seal.vx = -seal.speed; seal.facingLeft = true; }
             else if (tx > canvas.width * 0.66) { seal.vx = seal.speed; seal.facingLeft = false; }
             else if (!seal.isJumping) { seal.vy = -10; seal.isJumping = true; }
@@ -101,10 +93,9 @@
             joy.currX = touch.clientX;
             joy.currY = touch.clientY;
             
-            let dx = joy.currX - joy.x;
-            let dist = Math.abs(dx);
-            let power = Math.min(dist, joy.radius) / joy.radius;
-            seal.vx = (dx > 0 ? 1 : -1) * seal.speed * power;
+            let dx = joy.currX - joy.startX;
+            let move = Math.min(Math.abs(dx), joy.radius) / joy.radius;
+            seal.vx = (dx > 0 ? 1 : -1) * seal.speed * move;
             seal.facingLeft = seal.vx < 0;
         }
     });
@@ -119,9 +110,10 @@
         seal.x += seal.vx;
         seal.y += seal.vy;
 
-        // Пол и льдина
-        if (seal.y + seal.h > rock.y && seal.y < rock.y + rock.h &&
-            seal.x + seal.w > rock.x && seal.x < rock.x + rock.w && seal.vy > 0) {
+        // Физика льдины
+        if (seal.vy > 0 && 
+            seal.y + seal.h > rock.y && seal.y < rock.y + rock.h &&
+            seal.x + seal.w > rock.x && seal.x < rock.x + rock.w) {
             seal.y = rock.y - seal.h;
             seal.vy = 0;
             seal.isJumping = false;
@@ -131,25 +123,27 @@
         if (seal.x > canvas.width - seal.w) seal.x = canvas.width - seal.w;
         if (seal.y > canvas.height) { seal.y = 0; seal.vy = 0; }
 
-        // Сбор рыбы
+        // Рыба
         if (Math.abs(seal.x - fish.x) < 50 && Math.abs(seal.y - fish.y) < 50) {
             score++;
+            scoreVal.innerText = score;
             fish.x = Math.random() * (canvas.width - 50);
             fish.y = Math.random() * (canvas.height - 200);
         }
     }
 
     function draw() {
-        // Отрисовка фона
-        let g = ctx.createLinearGradient(0,0,0,canvas.height);
-        g.addColorStop(0, '#1cb5e0'); g.addColorStop(1, '#000046');
-        ctx.fillStyle = g; ctx.fillRect(0,0,canvas.width, canvas.height);
+        // Фон
+        let grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        grad.addColorStop(0, '#1cb5e0'); grad.addColorStop(1, '#000046');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         // Льдина
         ctx.fillStyle = "white";
         ctx.fillRect(rock.x, rock.y, rock.w, rock.h);
 
-        // Рыба и Тюлень (с удалением фона)
+        // Картинки
         ctx.save();
         ctx.globalCompositeOperation = 'multiply';
         ctx.drawImage(fishImg, fish.x, fish.y, fish.w, fish.h);
@@ -163,23 +157,17 @@
         }
         ctx.restore();
 
-        // Счет
-        ctx.fillStyle = "white";
-        ctx.font = "bold 24px Arial";
-        ctx.fillText("Рыбы: " + score, 20, 40);
-
         // Визуал джойстика
         if (isJoystickMode && joy.active) {
             ctx.beginPath();
-            ctx.arc(joy.x, joy.y, joy.radius, 0, Math.PI*2);
+            ctx.arc(joy.startX, joy.startY, joy.radius, 0, Math.PI*2);
             ctx.strokeStyle = "rgba(255,255,255,0.4)";
             ctx.stroke();
-            
             ctx.beginPath();
-            let dx = joy.currX - joy.x;
-            let dist = Math.min(Math.abs(dx), joy.radius);
-            ctx.arc(joy.x + (dx > 0 ? dist : -dist), joy.y, 20, 0, Math.PI*2);
-            ctx.fillStyle = "rgba(255,255,255,0.7)";
+            let dx = joy.currX - joy.startX;
+            let d = Math.min(Math.abs(dx), joy.radius);
+            ctx.arc(joy.startX + (dx > 0 ? d : -d), joy.startY, 20, 0, Math.PI*2);
+            ctx.fillStyle = "white";
             ctx.fill();
         }
 
