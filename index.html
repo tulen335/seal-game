@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Тюлень: Универсальное управление</title>
+    <title>Тюлень: Супер Версия</title>
     <style>
         body { margin: 0; overflow: hidden; background: #001a33; font-family: 'Arial', sans-serif; touch-action: none; user-select: none; }
         canvas { display: block; }
@@ -15,7 +15,6 @@
         }
         .best-score { color: #ffcc00; font-size: 22px; }
 
-        /* Кнопка переключения */
         .toggle-btn {
             position: absolute; top: 15px; right: 15px;
             padding: 10px 15px; background: rgba(0, 0, 0, 0.5);
@@ -23,20 +22,18 @@
             cursor: pointer; z-index: 30; font-weight: bold;
         }
 
-        /* Джойстик */
         #joystick-container {
             position: absolute; bottom: 40px; left: 40px;
             width: 120px; height: 120px;
             background: rgba(255, 255, 255, 0.1);
             border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.3);
-            display: none; z-index: 15; touch-action: none;
+            display: none; z-index: 15;
         }
         #joystick-knob {
             position: absolute; top: 35px; left: 35px;
             width: 50px; height: 50px;
             background: rgba(79, 172, 254, 0.6);
             border-radius: 50%; box-shadow: 0 0 15px rgba(0,0,0,0.5);
-            pointer-events: none;
         }
 
         #gameOver {
@@ -52,7 +49,7 @@
         }
         .damage-flash {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(255, 0, 0, 0.2); display: none; pointer-events: none; z-index: 5;
+            background: rgba(255, 0, 0, 0.3); display: none; pointer-events: none; z-index: 5;
         }
     </style>
 </head>
@@ -66,12 +63,11 @@
 
     <button class="toggle-btn" onclick="toggleControl()">Управление: Кнопки</button>
 
-    <div id="joystick-container">
-        <div id="joystick-knob"></div>
-    </div>
+    <div id="joystick-container"><div id="joystick-knob"></div></div>
 
     <div id="gameOver">
-        <h1 id="msg">Время вышло!</h1>
+        <h1 id="msg">Игра окончена!</h1>
+        <p id="finalScore"></p>
         <button class="main-btn" onclick="resetGame()">Играть снова</button>
     </div>
 
@@ -80,15 +76,10 @@
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const scoreDisplay = document.getElementById('score');
-        const bestDisplay = document.getElementById('best');
-        const timerDisplay = document.getElementById('timer');
-        const joystick = document.getElementById('joystick-container');
-        const knob = document.getElementById('joystick-knob');
-        const toggleBtn = document.querySelector('.toggle-btn');
-
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+        
+        // Загрузка твоих моделей
+        const sealImg = new Image(); sealImg.src = 'seal.jfif';
+        const fishImg = new Image(); fishImg.src = 'fish.jpg';
 
         let score = 0;
         let bestScore = localStorage.getItem('sealBest') || 0;
@@ -96,108 +87,135 @@
         let gameActive = true;
         let controlType = 'keyboard'; 
         let bubbles = [];
+        let timerInterval;
 
-        bestDisplay.innerText = bestScore;
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        document.getElementById('best').innerText = bestScore;
 
-        const sealImg = new Image(); sealImg.src = 'seal.jfif';
-        const fishImg = new Image(); fishImg.src = 'fish.jpg';
+        const seal = { 
+            x: 100, y: 300, w: 90, h: 70, 
+            vx: 0, vy: 0, speed: 0.8, friction: 0.93, 
+            facingLeft: false, angle: 0 
+        };
 
-        const seal = { x: 100, y: 300, w: 90, h: 70, vx: 0, vy: 0, speed: 0.8, friction: 0.93, facingLeft: false };
-        const fish = { x: -100, y: 0, w: 60, h: 40, speed: 4, gold: false };
-        const rock = { x: -200, y: 0, w: 110, h: 90, speed: 3.5 };
+        const fish = { 
+            x: -100, y: 0, w: 60, h: 40, 
+            speed: 4, gold: false,
+            offset: 0, frequency: 0.005, amplitude: 3 
+        };
 
-        // ЭФФЕКТЫ: ПУЗЫРЬКИ
+        const rock = { 
+            x: -200, y: 0, w: 110, h: 90, 
+            speed: 3.5, angle: 0, rotationSpeed: 0.05 
+        };
+
+        // Инициализация пузырьков на фоне
         function initBubbles() {
             bubbles = [];
-            for(let i=0; i<30; i++) bubbles.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, s: Math.random()*2+1, v: Math.random()*0.5+0.2 });
+            for(let i=0; i<35; i++) bubbles.push({ 
+                x: Math.random()*canvas.width, 
+                y: Math.random()*canvas.height, 
+                s: Math.random()*2+1, 
+                v: Math.random()*0.5+0.3 
+            });
         }
 
-        // ПЕРЕКЛЮЧАТЕЛЬ УПРАВЛЕНИЯ
+        // --- УПРАВЛЕНИЕ ---
+        const keys = {};
+        window.addEventListener('keydown', e => keys[e.code] = true);
+        window.addEventListener('keyup', e => keys[e.code] = false);
+
+        let touchX = 0, touchY = 0, isDragging = false;
+        const joystick = document.getElementById('joystick-container');
+        const knob = document.getElementById('joystick-knob');
+
         function toggleControl() {
             if (controlType === 'keyboard') {
                 controlType = 'joystick';
-                toggleBtn.innerText = "Управление: Джойстик";
+                document.querySelector('.toggle-btn').innerText = "Управление: Джойстик";
                 joystick.style.display = 'block';
             } else {
                 controlType = 'keyboard';
-                toggleBtn.innerText = "Управление: Кнопки";
+                document.querySelector('.toggle-btn').innerText = "Управление: Кнопки";
                 joystick.style.display = 'none';
                 touchX = 0; touchY = 0;
             }
         }
 
-        // КЛАВИАТУРА
-        const keys = {};
-        window.addEventListener('keydown', e => keys[e.code] = true);
-        window.addEventListener('keyup', e => keys[e.code] = false);
-
-        // УНИВЕРСАЛЬНЫЙ ДЖОЙСТИК (МЫШЬ + ТАЧ)
-        let touchX = 0, touchY = 0, isDragging = false;
-        
-        const startDrag = (e) => { if (controlType === 'joystick') isDragging = true; };
-        const endDrag = () => { 
-            isDragging = false; touchX = 0; touchY = 0; 
-            knob.style.transform = `translate(0, 0)`; 
-        };
-        const moveDrag = (e) => {
-            if (!isDragging || controlType !== 'joystick') return;
+        const handleMove = (e) => {
+            if (!isDragging) return;
             const rect = joystick.getBoundingClientRect();
             const centerX = rect.left + rect.width / 2;
             const centerY = rect.top + rect.height / 2;
             const clientX = e.touches ? e.touches[0].clientX : e.clientX;
             const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-
             let dx = clientX - centerX;
             let dy = clientY - centerY;
             const dist = Math.sqrt(dx*dx + dy*dy);
-            const maxDist = 45;
-
-            if (dist > maxDist) {
-                dx *= maxDist / dist;
-                dy *= maxDist / dist;
-            }
-
+            if (dist > 45) { dx *= 45 / dist; dy *= 45 / dist; }
             knob.style.transform = `translate(${dx}px, ${dy}px)`;
-            touchX = dx / maxDist;
-            touchY = dy / maxDist;
+            touchX = dx / 45; touchY = dy / 45;
         };
 
-        // Слушатели для мышки на джойстике
-        joystick.addEventListener('mousedown', startDrag);
-        window.addEventListener('mousemove', moveDrag);
-        window.addEventListener('mouseup', endDrag);
+        joystick.addEventListener('mousedown', () => isDragging = true);
+        joystick.addEventListener('touchstart', () => isDragging = true);
+        window.addEventListener('mousemove', handleMove);
+        window.addEventListener('touchmove', handleMove);
+        window.addEventListener('mouseup', () => { isDragging = false; knob.style.transform = `translate(0,0)`; touchX = 0; touchY = 0; });
+        window.addEventListener('touchend', () => { isDragging = false; knob.style.transform = `translate(0,0)`; touchX = 0; touchY = 0; });
 
-        // Слушатели для тача
-        joystick.addEventListener('touchstart', startDrag);
-        window.addEventListener('touchmove', moveDrag);
-        window.addEventListener('touchend', endDrag);
+        // --- ЛОГИКА ИГРЫ ---
+        function spawnFish() { 
+            fish.x = canvas.width + 100; 
+            fish.y = 100 + Math.random()*(canvas.height-200); 
+            fish.gold = Math.random() < 0.2; 
+            fish.speed = fish.gold ? 6 : 3.5 + Math.random() * 2;
+            fish.amplitude = 2 + Math.random() * 4;
+            fish.offset = Math.random() * 1000;
+        }
 
-        // Таймер
-        setInterval(() => { if(gameActive) { timeLeft--; timerDisplay.innerText = timeLeft; if(timeLeft <= 0) endGame(); } }, 1000);
+        function spawnRock() { 
+            rock.x = canvas.width + 500; 
+            rock.y = Math.random()*(canvas.height-100); 
+            rock.rotationSpeed = (Math.random() - 0.5) * 0.15; // Случайное вращение
+        }
 
-        function spawnFish() { fish.x = canvas.width + 100; fish.y = 50 + Math.random()*(canvas.height-100); fish.gold = Math.random() < 0.2; }
-        function spawnRock() { rock.x = canvas.width + 500; rock.y = Math.random()*(canvas.height-100); }
+        function startTimer() {
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => { 
+                if(gameActive) { 
+                    timeLeft--; 
+                    document.getElementById('timer').innerText = timeLeft; 
+                    if(timeLeft <= 0) endGame(); 
+                } 
+            }, 1000);
+        }
 
         function endGame() {
             gameActive = false;
             if(score > bestScore) {
                 bestScore = score;
                 localStorage.setItem('sealBest', bestScore);
-                bestDisplay.innerText = bestScore;
+                document.getElementById('best').innerText = bestScore;
             }
+            document.getElementById('finalScore').innerText = "Вы собрали: " + score;
             document.getElementById('gameOver').style.display = 'block';
         }
 
         function resetGame() {
             score = 0; timeLeft = 60; gameActive = true;
-            scoreDisplay.innerText = 0; timerDisplay.innerText = 60;
+            document.getElementById('score').innerText = 0;
+            document.getElementById('timer').innerText = 60;
+            seal.vx = 0; seal.vy = 0;
             document.getElementById('gameOver').style.display = 'none';
-            spawnFish(); spawnRock(); draw();
+            spawnFish(); spawnRock(); startTimer(); draw();
         }
 
         function update() {
             if(!gameActive) return;
 
+            // Движение тюленя
             if (controlType === 'keyboard') {
                 if(keys['ArrowUp']) seal.vy -= seal.speed;
                 if(keys['ArrowDown']) seal.vy += seal.speed;
@@ -212,21 +230,41 @@
 
             seal.vx *= seal.friction; seal.vy *= seal.friction;
             seal.x += seal.vx; seal.y += seal.vy;
+            seal.angle = seal.vy * 0.05; // Наклон при плавании
 
+            // Границы экрана
             if(seal.x < 0) seal.x = 0;
             if(seal.x > canvas.width - seal.w) seal.x = canvas.width - seal.w;
             if(seal.y < 0) seal.y = 0;
             if(seal.y > canvas.height - seal.h) seal.y = canvas.height - seal.h;
 
-            fish.x -= fish.speed; if(fish.x < -100) spawnFish();
-            rock.x -= rock.speed; if(rock.x < -150) spawnRock();
+            // Движение объектов
+            fish.x -= fish.speed;
+            fish.y += Math.sin((Date.now() + fish.offset) * fish.frequency) * fish.amplitude; // Траектория рыбки
+            if(fish.x < -100) spawnFish();
 
-            if(Math.abs(seal.x - fish.x) < 50 && Math.abs(seal.y - fish.y) < 40) {
-                if(fish.gold) timeLeft += 10; else { score++; scoreDisplay.innerText = score; }
+            rock.x -= rock.speed;
+            rock.angle += rock.rotationSpeed; // Вращение льдины
+            if(rock.x < -150) spawnRock();
+
+            // Коллизия с рыбкой
+            let dxF = (seal.x + seal.w/2) - (fish.x + fish.w/2);
+            let dyF = (seal.y + seal.h/2) - (fish.y + fish.h/2);
+            if(Math.sqrt(dxF*dxF + dyF*dyF) < 55) {
+                if(fish.gold) {
+                    timeLeft += 10;
+                    document.getElementById('timer').style.color = "#00ff00";
+                    setTimeout(()=>document.getElementById('timer').style.color="white", 500);
+                } else {
+                    score++;
+                    document.getElementById('score').innerText = score;
+                }
                 spawnFish();
             }
 
-            if(Math.abs(seal.x - rock.x) < 60 && Math.abs(seal.y - rock.y) < 50) {
+            // Коллизия со льдиной
+            if (seal.x < rock.x + rock.w - 20 && seal.x + seal.w > rock.x + 20 &&
+                seal.y < rock.y + rock.h - 20 && seal.y + seal.h > rock.y + 20) {
                 timeLeft -= 5;
                 document.getElementById('flash').style.display = 'block';
                 setTimeout(() => document.getElementById('flash').style.display = 'none', 100);
@@ -237,42 +275,67 @@
         function draw() {
             if(!gameActive) return;
 
-            // ГРАДИЕНТ МОРЯ
+            // Фон (Градиент воды)
             let g = ctx.createLinearGradient(0,0,0,canvas.height);
             g.addColorStop(0, '#1cb5e0'); g.addColorStop(1, '#000046');
             ctx.fillStyle = g; ctx.fillRect(0,0,canvas.width, canvas.height);
 
-            // ПУЗЫРЬКИ
+            // Пузырьки
             ctx.fillStyle = "rgba(255,255,255,0.2)";
             bubbles.forEach(b => { 
                 ctx.beginPath(); ctx.arc(b.x, b.y, b.s, 0, 7); ctx.fill(); 
                 b.y -= b.v; if(b.y < -10) b.y = canvas.height+10; 
             });
 
-            // ЛЬДИНА
-            ctx.fillStyle = "rgba(255,255,255,0.7)";
-            ctx.beginPath(); ctx.moveTo(rock.x, rock.y+20); ctx.lineTo(rock.x+rock.w, rock.y); ctx.lineTo(rock.x+rock.w-10, rock.y+rock.h); ctx.lineTo(rock.x+10, rock.y+rock.h-10); ctx.fill();
+            // ВРАЩАЮЩАЯСЯ ЛЬДИНА (Код)
+            ctx.save();
+            ctx.translate(rock.x + rock.w/2, rock.y + rock.h/2);
+            ctx.rotate(rock.angle);
+            ctx.fillStyle = "rgba(255,255,255,0.8)";
+            ctx.beginPath();
+            ctx.moveTo(-rock.w/2, -rock.h/2 + 20);
+            ctx.lineTo(rock.w/2, -rock.h/2);
+            ctx.lineTo(rock.w/2 - 10, rock.h/2);
+            ctx.lineTo(-rock.w/2 + 10, rock.h/2 - 10);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = "rgba(255,255,255,1)";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.restore();
 
-            // ТЮЛЕНЬ
+            // ТЮЛЕНЬ (Твоя модель)
             ctx.save();
             ctx.translate(seal.x + seal.w/2, seal.y + seal.h/2);
             if(seal.facingLeft) ctx.scale(-1, 1);
+            ctx.rotate(seal.facingLeft ? -seal.angle : seal.angle);
             ctx.drawImage(sealImg, -seal.w/2, -seal.h/2, seal.w, seal.h);
             ctx.restore();
 
-            // РЫБКА
+            // РЫБКА (Твоя модель + виляние)
             ctx.save();
-            if(fish.gold) ctx.filter = "sepia(1) saturate(10) brightness(1.2)";
-            ctx.drawImage(fishImg, fish.x, fish.y, fish.w, fish.h);
+            let wiggle = Math.sin(Date.now() / 120) * 6;
+            if(fish.gold) ctx.filter = "sepia(1) saturate(15) brightness(1.2)";
+            ctx.drawImage(fishImg, fish.x, fish.y + wiggle, fish.w, fish.h);
             ctx.restore();
 
             update();
             requestAnimationFrame(draw);
         }
 
-        initBubbles(); spawnFish(); spawnRock();
+        initBubbles();
+        spawnFish();
+        spawnRock();
+        startTimer();
+        
+        // Старт после загрузки картинок
         sealImg.onload = fishImg.onload = () => draw();
-        window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; initBubbles(); });
+
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            initBubbles();
+        });
     </script>
 </body>
 </html>
